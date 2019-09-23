@@ -20,6 +20,7 @@ import threading
 import time
 
 import paramiko
+import settings
 
 LOG = logging.getLogger()
 
@@ -73,3 +74,26 @@ class GerritEventsStream(threading.Thread):
         Stop the running thread.
         """
         self._running = False
+
+
+def vote_on_review(review_number, patchset_version, vote):
+    """
+    Vote on a review given the review number, the patchet version and
+    the vote status in (-1, 0, +1). This use the Verified label.
+    """
+
+    connection_options = {}
+    connection_options['port'] = settings.GERRIT_PORT
+    connection_options['username'] = settings.GERRIT_USERNAME
+    connection_options['hostname'] = settings.GERRIT_HOSTNAME
+
+    try:
+        client = paramiko.SSHClient()
+        client.load_system_host_keys()
+        client.connect(**connection_options)
+        client.get_transport().set_keepalive(60)
+        client.exec_command('gerrit review --verified %s %s,%s' % (vote, review_number, patchset_version))  # noqa
+    except Exception as e:
+            LOG.exception('gerrit error: %s' % str(e))
+    finally:
+        client.close()

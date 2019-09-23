@@ -56,11 +56,18 @@ def setup_logging():
     LOG.addHandler(stream_handler)
 
 
-def handleGerritEvent(event):
+def parse_event(event):
     """
-    Handle the gerrit event for new comment added on the dci-rhel-agent project
+    Parse the Gerrit's event and create a specific dict with the
+    following values:
+        - review_url
+        - dci_rpm_build_url
+        - rpm_url
+        - review_number
+        - patchset_version
+        - patchset_ref
     """
-    LOG.info('handling event')
+    event_parsed = {}
     if event['type'] == 'comment-added':
         if event['project'] == 'dci-rhel-agent':
             if event['author']['username'] == 'zuul':
@@ -71,8 +78,34 @@ def handleGerritEvent(event):
                         LOG.info('dci-rpm-build %s' % dci_rpm_build_url)
                         rpm_url = zuul.getRpmUrl(dci_rpm_build_url)
                         LOG.info('rpm url: %s' % rpm_url)
+                        LOG.info('patch url: %s' % event['change']['url'])
+                        LOG.info('review number: %s' % event['change']['number'])  # noqa
+                        LOG.info('patchset version: %s' % event['patchSet']['number'])  # noqa
+                        LOG.info('patchset ref: %s' % event['patchSet']['ref'])
+                        event_parsed['review_url'] = event['change']['url']
+                        event_parsed['dci_rpm_build_url'] = dci_rpm_build_url
+                        event_parsed['rpm_url'] = rpm_url
+                        event_parsed['review_number'] = event['change']['number']  # noqa
+                        event_parsed['patchset_version'] = event['patchSet']['number']  # noqa
+                        event_parsed['patched_ref'] = event['patchSet']['ref']
     else:
         LOG.debug('event type %s' % event['type'])
+    return event_parsed
+
+
+def handleGerritEvent(event):
+    """
+    Handle the gerrit event for new comment added on the dci-rhel-agent project
+    """
+    LOG.info('handling event')
+    event_parsed = parse_event(event)
+    LOG.info(event_parsed)
+    if 'review_number' in event_parsed and 'patchset_version' in event_parsed:
+        LOG.info('running deployment...')
+        gerrit.vote_on_review(event_parsed['review_number'],
+                              event_parsed['patchset_version'],
+                              1)
+        LOG.debug('voted 1')
 
 
 if __name__ == "__main__":
@@ -93,10 +126,10 @@ if __name__ == "__main__":
     options['username'] = settings.GERRIT_USERNAME
     options['hostname'] = settings.GERRIT_HOSTNAME
 
-    gerrit = gerrit.GerritEventsStream(event_queue, options)
-    gerrit.daemon = True
-    gerrit.setName('GerritEventsStream')
-    gerrit.start()
+    gerrit_events_stream = gerrit.GerritEventsStream(event_queue, options)
+    gerrit_events_stream.daemon = True
+    gerrit_events_stream.setName('GerritEventsStream')
+    gerrit_events_stream.start()
 
     LOG.info('ready to receive gerrit stream events...')
     while running:
@@ -108,5 +141,5 @@ if __name__ == "__main__":
         time.sleep(1)
 
     LOG.info('waiting for GerritEventsStream to terminate')
-    gerrit.stop()
-    gerrit.join()
+    gerrit_events_stream.stop()
+    gerrit_events_stream.join()
