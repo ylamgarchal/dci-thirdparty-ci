@@ -7,4 +7,4 @@ Type=simple
 User=dci
 Group=dci
 WorkingDirectory=/opt/dci-thirdparty-ci
-ExecStart=/opt/dci-thirdparty-ci/dci-feeder/dci-feeder-deploy
+ExecStart=/opt/dci-thirdparty-ci/systemd/dci-feeder/dci-feeder-deploy

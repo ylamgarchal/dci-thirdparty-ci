@@ -24,16 +24,13 @@ import traceback
 
 def check_new_dci_feeder_package():
     try:
+        subprocess.check_output(['yum', 'clean', 'all'])
         subprocess.check_output(['yum', 'check-update', '-q', 'dci-feeder'])
     except subprocess.CalledProcessError as e:
         if e.returncode == 100:
             print("dci-feeder version: %s " % e.output.strip().split()[1])
             return True
     return False
-
-
-def install_new_dci_feeder_package():
-    print("installing new dci-feeder package")
 
 
 def deploy_dci_feeder():
@@ -55,7 +52,6 @@ def main():
     new_package = check_new_dci_feeder_package()
     if new_package:
         print("new package available")
-        install_new_dci_feeder_package()
         deploy_dci_feeder()
     else:
         print("no new package available")
