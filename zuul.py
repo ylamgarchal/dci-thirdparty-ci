@@ -14,7 +14,10 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+import logging
 import requests
+
+LOG = logging.getLogger()
 
 
 def getRpmUrl(dci_rpm_build_url):
@@ -28,8 +31,12 @@ def getRpmUrl(dci_rpm_build_url):
     log_url = build['log_url']
     zuul_manifest_url = '%s/zuul-manifest.json' % log_url
     zuul_manifest = requests.get(zuul_manifest_url)
-    rpm_name = zuul_manifest.json()['tree'][1]['children'][0]['children'][0]['children'][0]['children'][1]['name']  # noqa
-    return '%s/buildset/el/7/x86_64/%s' % (log_url, rpm_name)
+    for tree in zuul_manifest.json()['tree']:
+        if tree['name'] == 'buildset':
+            rpm_name = tree['children'][0]['children'][0]['children'][0]['children'][1]['name']  # noqa
+            return '%s/buildset/el/7/x86_64/%s' % (log_url, rpm_name)
+    LOG.debug('rpm url not found')
+    return None
 
 
 def getDciRpmBuildUrl(comment):

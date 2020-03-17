@@ -106,6 +106,8 @@ def handleGerritEvent(event):
                               event_parsed['patchset_version'],
                               1)
         LOG.debug('voted 1')
+    else:
+        LOG.debug('no vote for %s\n' % str(event_parsed))
 
 
 if __name__ == "__main__":
@@ -125,6 +127,7 @@ if __name__ == "__main__":
     options['port'] = settings.GERRIT_PORT
     options['username'] = settings.GERRIT_USERNAME
     options['hostname'] = settings.GERRIT_HOSTNAME
+    options['key_filename'] = settings.GERRIT_SSH_KEY_FILENAME
 
     gerrit_events_stream = gerrit.GerritEventsStream(event_queue, options)
     gerrit_events_stream.daemon = True

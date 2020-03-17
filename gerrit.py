@@ -48,7 +48,12 @@ class GerritEventsStream(threading.Thread):
             client.load_system_host_keys()
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             try:
-                client.connect(**self._connection_options)
+                client.connect(hostname=self._connection_options['hostname'],
+                               username=self._connection_options['username'],
+                               port=self._connection_options['port'],
+                               key_filename=self._connection_options['key_filename'],  # noqa
+                               look_for_keys=True,
+                               timeout=5000)
                 client.get_transport().set_keepalive(60)
                 _, stdout, _ = client.exec_command('gerrit stream-events')
                 while self._running:
@@ -86,8 +91,18 @@ def vote_on_review(review_number, patchset_version, vote):
     connection_options['port'] = settings.GERRIT_PORT
     connection_options['username'] = settings.GERRIT_USERNAME
     connection_options['hostname'] = settings.GERRIT_HOSTNAME
+    connection_options['key_filename'] = settings.GERRIT_SSH_KEY_FILENAME
 
     try:
+        client = paramiko.SSHClient()
+        client.load_system_host_keys()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        client.connect(hostname=connection_options['hostname'],
+                       username=connection_options['username'],
+                       port=connection_options['port'],
+                       key_filename=connection_options['key_filename'],
+                       look_for_keys=True,
+                       timeout=5000)
         client = paramiko.SSHClient()
         client.load_system_host_keys()
         client.connect(**connection_options)

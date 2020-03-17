@@ -14,7 +14,10 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+import os
 
 GERRIT_PORT = 29418
-GERRIT_USERNAME = 'ylamgarchal'
+GERRIT_USERNAME = 'dci-ci-bot'
 GERRIT_HOSTNAME = 'softwarefactory-project.io'
+GERRIT_SSH_KEY_FILENAME = os.getenv('GERRIT_SSH_KEY_FILENAME',
+                                    '/home/yassine/dci_ci_bot_id_rsa')
