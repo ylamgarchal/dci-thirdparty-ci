@@ -20,4 +20,5 @@ GERRIT_PORT = 29418
 GERRIT_USERNAME = 'dci-ci-bot'
 GERRIT_HOSTNAME = 'softwarefactory-project.io'
 GERRIT_SSH_KEY_FILENAME = os.getenv('GERRIT_SSH_KEY_FILENAME',
-                                    '/home/yassine/dci_ci_bot_id_rsa')
+                                    '/home/dci/dci_ci_bot_id_rsa')
+RHEL_AGENT_DIR = os.getenv('RHEL_AGENT_DIR', '/home/dci/dci-rhel-agent')

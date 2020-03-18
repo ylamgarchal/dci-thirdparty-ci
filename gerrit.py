@@ -107,7 +107,7 @@ def vote_on_review(review_number, patchset_version, vote):
         client.load_system_host_keys()
         client.connect(**connection_options)
         client.get_transport().set_keepalive(60)
-        client.exec_command('gerrit review --verified %s %s,%s' % (vote, review_number, patchset_version))  # noqa
+        client.exec_command('gerrit review --message voilaaa --verified %s %s,%s' % (vote, review_number, patchset_version))  # noqa
     except Exception as e:
             LOG.exception('gerrit error: %s' % str(e))
     finally:

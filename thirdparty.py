@@ -16,7 +16,9 @@
 
 import Queue
 import logging
+import os
 import signal
+import subprocess
 import sys
 import time
 
@@ -52,7 +54,6 @@ def setup_logging():
         pass
 
     stream_handler.setLevel(logging.DEBUG)
-    stream_handler.setFormatter(formatter)
     LOG.addHandler(stream_handler)
 
 
@@ -93,6 +94,42 @@ def parse_event(event):
     return event_parsed
 
 
+def download_patchset(review_number, patchset_version):
+    LOG.debug('fetch patchset %s,%s' % (review_number, patchset_version))
+    command = 'git review -d %s,%s' % (review_number, patchset_version)
+    proc = subprocess.Popen(command, shell=True)
+    proc.wait()
+
+
+def install_rpm_review(rpm_url):
+    LOG.debug('install rpm of the review: %s' % rpm_url)
+    rpm_name = rpm_url.split('/')[-1]
+    command = 'wget %s -O /tmp/%s' % (rpm_url, rpm_name)
+    LOG.debug('write rpm to /tmp/%s' % rpm_name)
+    proc = subprocess.Popen(command, shell=True)
+    proc.wait()
+
+    command = 'sudo rpm -i --force /tmp/%s' % rpm_name
+    proc = subprocess.Popen(command, shell=True)
+    proc.wait()
+
+
+def build_container():
+    LOG.debug('build the container locally')
+    command = 'sudo dci-rhel-agent-ctl --build'
+    LOG.debug(command)
+    proc = subprocess.Popen(command, shell=True)
+    proc.wait()
+
+
+def run_agent():
+    LOG.debug('start the agent')
+    command = 'sudo dci-rhel-agent-ctl --start --url localhost/dci-rhel-agent:latest --local --skip-download'
+    LOG.debug(command)
+    proc = subprocess.Popen(command, shell=True)
+    return proc.wait()
+
+
 def handleGerritEvent(event):
     """
     Handle the gerrit event for new comment added on the dci-rhel-agent project
@@ -101,11 +138,18 @@ def handleGerritEvent(event):
     event_parsed = parse_event(event)
     LOG.info(event_parsed)
     if 'review_number' in event_parsed and 'patchset_version' in event_parsed:
-        LOG.info('running deployment...')
+        download_patchset(event_parsed['review_number'],
+                          event_parsed['patchset_version'])
+        install_rpm_review(event_parsed['rpm_url'])
+        build_container()
+        rc = run_agent()
+        vote = 1
+        if rc != 0:
+            vote = -1
         gerrit.vote_on_review(event_parsed['review_number'],
                               event_parsed['patchset_version'],
-                              1)
-        LOG.debug('voted 1')
+                              vote)
+        LOG.debug('voted %s' % vote)
     else:
         LOG.debug('no vote for %s\n' % str(event_parsed))
 
@@ -128,6 +172,8 @@ if __name__ == "__main__":
     options['username'] = settings.GERRIT_USERNAME
     options['hostname'] = settings.GERRIT_HOSTNAME
     options['key_filename'] = settings.GERRIT_SSH_KEY_FILENAME
+
+    os.chdir(settings.RHEL_AGENT_DIR)
 
     gerrit_events_stream = gerrit.GerritEventsStream(event_queue, options)
     gerrit_events_stream.daemon = True
