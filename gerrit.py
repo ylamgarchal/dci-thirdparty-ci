@@ -20,6 +20,7 @@ import threading
 import time
 
 import paramiko
+from paramiko.client import WarningPolicy
 import settings
 
 LOG = logging.getLogger()
@@ -46,7 +47,7 @@ class GerritEventsStream(threading.Thread):
             LOG.debug('%s: running %s' % (self.getName(), self._running))
             client = paramiko.SSHClient()
             client.load_system_host_keys()
-            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            client.set_missing_host_key_policy(WarningPolicy())
             try:
                 client.connect(hostname=self._connection_options['hostname'],
                                username=self._connection_options['username'],
@@ -55,23 +56,25 @@ class GerritEventsStream(threading.Thread):
                                look_for_keys=True,
                                timeout=5000)
                 client.get_transport().set_keepalive(60)
-                _, stdout, _ = client.exec_command('gerrit stream-events')
+                _, stdout, _ = client.exec_command('gerrit stream-events -s comment-added')
                 while self._running:
                     LOG.debug('%s: checking incoming data' % self.getName())
                     # check if there is some data in the underlying paramiko
                     # channel, this for the thread to not sleep on IO.
                     if stdout.channel.recv_ready():
                         event = stdout.readline()
-                        self._event_queue.put(json.loads(event))
+                        json_event = json.loads(event)
+                        if 'project' in json_event and json_event['project'] == 'dci-rhel-agent':
+                            self._event_queue.put(json_event)
                     if self._running:
-                        time.sleep(5)
+                        time.sleep(1)
                 LOG.debug('%s: stop running' % self.getName())
             except Exception as e:
                 LOG.exception('gerrit error: %s' % str(e))
             finally:
                 client.close()
             if self._running:
-                time.sleep(5)
+                time.sleep(2)
         LOG.info('%s: terminated' % self.getName())
 
     def stop(self):
@@ -96,18 +99,47 @@ def vote_on_review(review_number, patchset_version, vote):
     try:
         client = paramiko.SSHClient()
         client.load_system_host_keys()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        client.set_missing_host_key_policy(WarningPolicy())
         client.connect(hostname=connection_options['hostname'],
                        username=connection_options['username'],
                        port=connection_options['port'],
                        key_filename=connection_options['key_filename'],
                        look_for_keys=True,
                        timeout=5000)
+        client.get_transport().set_keepalive(60)
+        if vote == 1:
+            _, _, _ = client.exec_command('gerrit review --message "dci-third-party success !" --verified %s %s,%s' % (vote, review_number, patchset_version))  # noqa
+        else:
+            _, _, _ = client.exec_command('gerrit review --message "dci-third-party failure !" --verified %s %s,%s' % (vote, review_number, patchset_version))  # noqa
+    except Exception as e:
+            LOG.exception('gerrit error: %s' % str(e))
+    finally:
+        client.close()
+
+
+def comment(review_number, patchset_version, comment):
+    """
+    Comment a review.
+    """
+
+    connection_options = {}
+    connection_options['port'] = settings.GERRIT_PORT
+    connection_options['username'] = settings.GERRIT_USERNAME
+    connection_options['hostname'] = settings.GERRIT_HOSTNAME
+    connection_options['key_filename'] = settings.GERRIT_SSH_KEY_FILENAME
+
+    try:
         client = paramiko.SSHClient()
         client.load_system_host_keys()
-        client.connect(**connection_options)
+        client.set_missing_host_key_policy(WarningPolicy())
+        client.connect(hostname=connection_options['hostname'],
+                       username=connection_options['username'],
+                       port=connection_options['port'],
+                       key_filename=connection_options['key_filename'],
+                       look_for_keys=True,
+                       timeout=5000)
         client.get_transport().set_keepalive(60)
-        client.exec_command('gerrit review --message voilaaa --verified %s %s,%s' % (vote, review_number, patchset_version))  # noqa
+        _, _, _ = client.exec_command('gerrit review --message "%s" %s,%s' % (comment, review_number, patchset_version))  # noqa
     except Exception as e:
             LOG.exception('gerrit error: %s' % str(e))
     finally:

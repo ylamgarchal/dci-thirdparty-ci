@@ -14,7 +14,13 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-import Queue
+try:
+    from Queue import Queue
+    from Queue import Empty as q_Empty
+except ImportError:
+    from queue import Queue
+    from queue import Empty as q_Empty
+
 import logging
 import os
 import signal
@@ -69,8 +75,9 @@ def parse_event(event):
         - patchset_ref
     """
     event_parsed = {}
-    if event['type'] == 'comment-added':
-        if event['project'] == 'dci-rhel-agent':
+    if 'project' in event and event['project'] == 'dci-rhel-agent':
+        LOG.info(str(event))
+        if event['type'] == 'comment-added':
             if event['author']['username'] == 'zuul':
                 for vote in event['approvals']:
                     if vote['type'] == 'Verified' and vote['value'] == '1':
@@ -88,15 +95,17 @@ def parse_event(event):
                         event_parsed['rpm_url'] = rpm_url
                         event_parsed['review_number'] = event['change']['number']  # noqa
                         event_parsed['patchset_version'] = event['patchSet']['number']  # noqa
-                        event_parsed['patched_ref'] = event['patchSet']['ref']
+                        event_parsed['patchset_ref'] = event['patchSet']['ref']
     else:
         LOG.debug('event type %s' % event['type'])
     return event_parsed
 
 
-def download_patchset(review_number, patchset_version):
+def download_patchset(event):
+    review_number = event['review_number']
+    patchset_version = event['patchset_version']
     LOG.debug('fetch patchset %s,%s' % (review_number, patchset_version))
-    command = 'git review -d %s,%s' % (review_number, patchset_version)
+    command = 'git fetch "https://softwarefactory-project.io/r/dci-rhel-agent" %s && git checkout FETCH_HEAD' % (event['patchset_ref'])
     proc = subprocess.Popen(command, shell=True)
     proc.wait()
 
@@ -132,14 +141,13 @@ def run_agent():
 
 def handleGerritEvent(event):
     """
-    Handle the gerrit event for new comment added on the dci-rhel-agent project
+    Handle the gerrit event
     """
     LOG.info('handling event')
     event_parsed = parse_event(event)
-    LOG.info(event_parsed)
     if 'review_number' in event_parsed and 'patchset_version' in event_parsed:
-        download_patchset(event_parsed['review_number'],
-                          event_parsed['patchset_version'])
+        gerrit.comment(event_parsed['review_number'], event_parsed['patchset_version'], "dci-third-party starting job...")
+        download_patchset(event_parsed)
         install_rpm_review(event_parsed['rpm_url'])
         build_container()
         rc = run_agent()
@@ -157,7 +165,7 @@ def handleGerritEvent(event):
 if __name__ == "__main__":
     setup_logging()
 
-    event_queue = Queue.Queue()
+    event_queue = Queue()
     running = True
 
     def _receiveSignal(signumber, frame):
@@ -185,7 +193,7 @@ if __name__ == "__main__":
         try:
             event = event_queue.get(block=False)
             handleGerritEvent(event)
-        except Queue.Empty:
+        except q_Empty:
             pass
         time.sleep(1)
 
