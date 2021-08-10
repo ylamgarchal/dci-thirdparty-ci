@@ -29,6 +29,8 @@ import sys
 import time
 
 import gerrit
+import paramiko
+from paramiko.client import WarningPolicy
 import settings
 import zuul
 
@@ -101,42 +103,83 @@ def parse_event(event):
     return event_parsed
 
 
-def download_patchset(event):
-    review_number = event['review_number']
-    patchset_version = event['patchset_version']
-    LOG.debug('fetch patchset %s,%s' % (review_number, patchset_version))
-    command = 'git fetch "https://softwarefactory-project.io/r/dci-rhel-agent" %s && git checkout FETCH_HEAD' % (event['patchset_ref'])
-    proc = subprocess.Popen(command, shell=True)
-    proc.wait()
+def exec_remote_command(client, command):
+    try:
+        LOG.debug(command)
+        _, stdout, stderr = client.exec_command(command)
+        return stdout.channel.recv_exit_status(), stdout, stderr
+    except paramiko.ssh_exception.SSHException as e:
+        raise Exception('ssh exception %s' % str(e))
 
-
-def install_rpm_review(rpm_url):
-    LOG.debug('install rpm of the review: %s' % rpm_url)
-    rpm_name = rpm_url.split('/')[-1]
-    command = 'wget %s -O /tmp/%s' % (rpm_url, rpm_name)
-    LOG.debug('write rpm to /tmp/%s' % rpm_name)
-    proc = subprocess.Popen(command, shell=True)
-    proc.wait()
-
-    command = 'sudo rpm -i --force /tmp/%s' % rpm_name
-    proc = subprocess.Popen(command, shell=True)
-    proc.wait()
-
-
-def build_container():
-    LOG.debug('build the container locally')
-    command = 'sudo dci-rhel-agent-ctl --build'
+def bootstrap_libvirt_infra(dci_client_id, dci_api_secret):
+    LOG.debug('bootstrap the libvirt setup')
+    os.chdir("%s/virtual-setup" % settings.RHEL_AGENT_DIR)
+    command = 'ansible-playbook site.yml -e "ssh_key=id_rsa_rhel_ci dci_client_id=%s dci_api_secret=%s"' % (dci_client_id, dci_api_secret)
     LOG.debug(command)
     proc = subprocess.Popen(command, shell=True)
-    proc.wait()
+    rc = proc.wait()
+    if rc != 0:
+        raise Exception('error while running the bootstrap libvirt infra')
+    return subprocess.getoutput("sudo virsh domifaddr jumpbox|grep 192.168.122| tr -s ' '|cut -d ' ' -f5|cut -d '/' -f1")
 
 
-def run_agent():
-    LOG.debug('start the agent')
-    command = 'sudo dci-rhel-agent-ctl --start --url localhost/dci-rhel-agent:latest --local --skip-download'
-    LOG.debug(command)
-    proc = subprocess.Popen(command, shell=True)
-    return proc.wait()
+def run_agent_on_jumpbox(jumpbox_ip, event_parsed):
+
+    def _download_patchset(client, event):
+        review_number = event['review_number']
+        patchset_version = event['patchset_version']
+        LOG.debug('fetch patchset %s,%s' % (review_number, patchset_version))
+        command = 'cd /home/dci/dci-rhel-agent; git fetch "https://softwarefactory-project.io/r/dci-rhel-agent" %s && git checkout FETCH_HEAD' % (event['patchset_ref'])
+        rc, stdout, stderr = exec_remote_command(client, command)
+        if rc != 0:
+            LOG.error('fail to download the patchset from the jumphost: stdout: %s, stderr: %s' % (stdout.readlines(), stderr.readlines()))        
+
+    def _install_rpm_review(client, rpm_url):
+        LOG.debug('install rpm of the review: %s' % rpm_url)
+        rpm_name = rpm_url.split('/')[-1]
+        command = 'wget %s -O /tmp/%s' % (rpm_url, rpm_name)
+        LOG.debug(command)
+        rc, stdout, stderr = exec_remote_command(client, command)
+        if rc != 0:
+            LOG.error('fail to download the rpm from the jumphost: stdout: %s, stderr: %s' % (stdout.readlines(), stderr.readlines()))
+
+        command = 'sudo rpm -i --force /tmp/%s' % rpm_name
+        LOG.debug(command)
+        rc, stdout, stderr = exec_remote_command(client, command)
+        if rc != 0:
+            LOG.error('fail to install the rpm in the the jumphost: stdout: %s, stderr: %s' % (stdout.readlines(), stderr.readlines()))
+
+    def _build_container(client):
+        LOG.debug('build the container locally')
+        command = 'cd /home/dci/dci-rhel-agent; sudo dci-rhel-agent-ctl --build'
+        LOG.debug(command)
+        rc, stdout, stderr = exec_remote_command(client, command)
+        if rc != 0:
+            LOG.error('fail to build the container in the jumphost: stdout: %s, stderr: %s' % (stdout.readlines(), stderr.readlines()))
+
+    def _run_agent(client):
+        LOG.debug('start the agent')
+        command = 'cd /home/dci/dci-rhel-agent; sudo dci-rhel-agent-ctl --start --url localhost/dci-rhel-agent:latest --local --skip-download'
+        LOG.debug(command)
+        rc, stdout, stderr = exec_remote_command(client, command)
+        if rc != 0:
+            LOG.error('agent failed: stdout: %s, stderr: %s' % (stdout.readlines(), stderr.readlines()))
+        return rc
+
+    client = paramiko.SSHClient()
+    client.load_system_host_keys()
+    client.set_missing_host_key_policy(WarningPolicy())
+    client.connect(hostname=jumpbox_ip,
+                   username='dci',
+                   key_filename=settings.HOST_SSH_KEY_FILENAME,
+                   look_for_keys=True,
+                   timeout=5000)
+    client.get_transport().set_keepalive(60)
+
+    _download_patchset(client, event_parsed)
+    _install_rpm_review(client, event_parsed['rpm_url'])
+    _build_container(client)
+    return _run_agent(client)
 
 
 def handleGerritEvent(event):
@@ -147,10 +190,10 @@ def handleGerritEvent(event):
     event_parsed = parse_event(event)
     if 'review_number' in event_parsed and 'patchset_version' in event_parsed:
         gerrit.comment(event_parsed['review_number'], event_parsed['patchset_version'], "dci-third-party starting job...")
-        download_patchset(event_parsed)
-        install_rpm_review(event_parsed['rpm_url'])
-        build_container()
-        rc = run_agent()
+        jumpbox_ip = bootstrap_libvirt_infra(settings.RHEL_DCI_CLIENT_ID,
+                                             settings.RHEL_DCI_API_SECRET)
+        LOG.info('jumpbox ip address: %s' % jumpbox_ip)
+        rc = run_agent_on_jumpbox(jumpbox_ip, event_parsed)
         vote = 1
         if rc != 0:
             vote = -1
@@ -180,6 +223,8 @@ if __name__ == "__main__":
     options['username'] = settings.GERRIT_USERNAME
     options['hostname'] = settings.GERRIT_HOSTNAME
     options['key_filename'] = settings.GERRIT_SSH_KEY_FILENAME
+
+    LOG.info('using connection options: %s' % str(options))
 
     os.chdir(settings.RHEL_AGENT_DIR)
 

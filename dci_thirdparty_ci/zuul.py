@@ -33,8 +33,8 @@ def getRpmUrl(dci_rpm_build_url):
     zuul_manifest = requests.get(zuul_manifest_url)
     for tree in zuul_manifest.json()['tree']:
         if tree['name'] == 'buildset':
-            rpm_name = tree['children'][0]['children'][0]['children'][0]['children'][1]['name']  # noqa
-            return '%s/buildset/el/7/x86_64/%s' % (log_url, rpm_name)
+            rpm_name = tree['children'][0]['children'][0]['children'][0]['children'][1]['children'][0]['name']  # noqa
+            return '%s/buildset/el/7/x86_64/x86_64/%s' % (log_url, rpm_name)
     LOG.debug('rpm url not found')
     return None
 
