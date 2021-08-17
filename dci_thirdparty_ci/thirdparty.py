@@ -23,6 +23,7 @@ except ImportError:
 
 import logging
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -114,6 +115,14 @@ def exec_remote_command(client, command):
 def bootstrap_libvirt_infra(dci_client_id, dci_api_secret):
     LOG.debug('bootstrap the libvirt setup')
     os.chdir("%s/virtual-setup" % settings.RHEL_AGENT_DIR)
+
+    command = 'ansible-playbook site.yml -e "hook_action=cleanup" -e "dci_client_id=lol" -e "dci_api_secret=lol"'
+    LOG.debug(command)
+    proc = subprocess.Popen(command, shell=True)
+    rc = proc.wait()
+    if rc != 0:
+        raise Exception('error while running the bootstrap libvirt infra')
+
     command = 'ansible-playbook site.yml -e "ssh_key=id_rsa_rhel_ci dci_client_id=%s dci_api_secret=%s"' % (dci_client_id, dci_api_secret)
     LOG.debug(command)
     proc = subprocess.Popen(command, shell=True)
@@ -159,12 +168,18 @@ def run_agent_on_jumpbox(jumpbox_ip, event_parsed):
 
     def _run_agent(client):
         LOG.debug('start the agent')
-        command = 'cd /home/dci/dci-rhel-agent; sudo dci-rhel-agent-ctl --start --url localhost/dci-rhel-agent:latest --local --skip-download'
+        command = 'cd /home/dci/dci-rhel-agent; sudo dci-rhel-agent-ctl --start --url localhost/dci-rhel-agent:latest --local --skip-download --job-id-file /tmp/job_id_file'
         LOG.debug(command)
         rc, stdout, stderr = exec_remote_command(client, command)
         if rc != 0:
             LOG.error('agent failed: stdout: %s, stderr: %s' % (stdout.readlines(), stderr.readlines()))
-        return rc
+            return rc, None
+        job_output = str(stdout.read())
+        job_id = re.search('\"job_id\": \"(\w{8}-\w{4}-\w{4}-\w{4}-\w{12})\".*', job_output, re.IGNORECASE)
+        job_id_str = 'job_not_found'
+        if len(job_id.groups(0)) > 0:
+            job_id_str = job_id.groups(0)[0]
+        return rc, job_id_str
 
     client = paramiko.SSHClient()
     client.load_system_host_keys()
@@ -193,13 +208,13 @@ def handleGerritEvent(event):
         jumpbox_ip = bootstrap_libvirt_infra(settings.RHEL_DCI_CLIENT_ID,
                                              settings.RHEL_DCI_API_SECRET)
         LOG.info('jumpbox ip address: %s' % jumpbox_ip)
-        rc = run_agent_on_jumpbox(jumpbox_ip, event_parsed)
+        rc, job_id = run_agent_on_jumpbox(jumpbox_ip, event_parsed)
         vote = 1
         if rc != 0:
             vote = -1
         gerrit.vote_on_review(event_parsed['review_number'],
                               event_parsed['patchset_version'],
-                              vote)
+                              vote, job_id)
         LOG.debug('voted %s' % vote)
     else:
         LOG.debug('no vote for %s\n' % str(event_parsed))

@@ -84,7 +84,7 @@ class GerritEventsStream(threading.Thread):
         self._running = False
 
 
-def vote_on_review(review_number, patchset_version, vote):
+def vote_on_review(review_number, patchset_version, vote, job_id):
     """
     Vote on a review given the review number, the patchet version and
     the vote status in (-1, 0, +1). This use the Verified label.
@@ -107,10 +107,11 @@ def vote_on_review(review_number, patchset_version, vote):
                        look_for_keys=True,
                        timeout=5000)
         client.get_transport().set_keepalive(60)
+        job_url = "https://www.distributed-ci.io/jobs/%s" % job_id
         if vote == 1:
-            _, _, _ = client.exec_command('gerrit review --message "dci-third-party success !" --verified %s %s,%s' % (vote, review_number, patchset_version))  # noqa
+            _, _, _ = client.exec_command('gerrit review --message "dci-third-party success ! %s" --verified %s %s,%s' % (job_url, vote, review_number, patchset_version))  # noqa
         else:
-            _, _, _ = client.exec_command('gerrit review --message "dci-third-party failure !" --verified %s %s,%s' % (vote, review_number, patchset_version))  # noqa
+            _, _, _ = client.exec_command('gerrit review --message "dci-third-party failure ! %s" --verified %s %s,%s' % (job_url, vote, review_number, patchset_version))  # noqa
     except Exception as e:
             LOG.exception('gerrit error: %s' % str(e))
     finally:
