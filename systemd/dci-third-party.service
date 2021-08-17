@@ -1,0 +1,13 @@
+[Unit]
+Description=DCI Third Party Service
+
+[Service]
+User=dci
+Group=dci
+Restart=always
+EnvironmentFile=/run/dci-third-party.env
+WorkingDirectory=/opt/dci-thirdparty-ci/dci_thirdparty_ci
+ExecStart=/usr/bin/python3 thirdparty.py
+
+[Install]
+WantedBy=local.target

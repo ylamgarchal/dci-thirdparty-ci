@@ -168,7 +168,7 @@ def run_agent_on_jumpbox(jumpbox_ip, event_parsed):
 
     def _run_agent(client):
         LOG.debug('start the agent')
-        command = 'cd /home/dci/dci-rhel-agent; sudo dci-rhel-agent-ctl --start --url localhost/dci-rhel-agent:latest --local --skip-download --job-id-file /tmp/job_id_file'
+        command = 'cd /home/dci/dci-rhel-agent; sudo dci-rhel-agent-ctl --start --url localhost/dci-rhel-agent:latest --local --skip-download'
         LOG.debug(command)
         rc, stdout, stderr = exec_remote_command(client, command)
         if rc != 0:

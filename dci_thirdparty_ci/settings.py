@@ -20,9 +20,9 @@ GERRIT_PORT = 29418
 GERRIT_USERNAME = 'dci-ci-bot'
 GERRIT_HOSTNAME = 'softwarefactory-project.io'
 GERRIT_SSH_KEY_FILENAME = os.getenv('GERRIT_SSH_KEY_FILENAME',
-                                    '/home/yassine/dci-ci-bot/dci-ci-bot.id_rsa')
-RHEL_AGENT_DIR = os.getenv('RHEL_AGENT_DIR', '/home/yassine/dci/dci-rhel-agent')
+                                    '/home/dci/dci-ci-bot.id_rsa')
+RHEL_AGENT_DIR = os.getenv('RHEL_AGENT_DIR', '/opt/dci-rhel-agent')
 RHEL_DCI_CLIENT_ID = os.getenv('DCI_CLIENT_ID')
 RHEL_DCI_API_SECRET = os.getenv('DCI_API_SECRET')
 
-HOST_SSH_KEY_FILENAME = os.getenv('HOST_SSH_KEY_FILENAME', '/home/yassine/.ssh/id_rsa')
+HOST_SSH_KEY_FILENAME = os.getenv('HOST_SSH_KEY_FILENAME', '/home/dci/.ssh/id_rsa')
